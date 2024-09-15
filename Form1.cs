@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
 using Microsoft.Win32;
 using System.Net;
 using System.Net.Http;
@@ -12,6 +16,8 @@ namespace _2x
         private string proxyPort = "8080";
         private System.Windows.Forms.Timer statusCheckTimer;
 
+        private Dictionary<string, Tuple<string, string>> proxySettingsDict = new Dictionary<string, Tuple<string, string>>();
+
         private readonly Icon defaultStart = Properties.Resource.default_start;
         private readonly Icon enabledConnectedIcon = Properties.Resource.proxy_enabled_connected;
         private readonly Icon enabledDisconnectedIcon = Properties.Resource.proxy_enabled_disconnected;
@@ -23,6 +29,8 @@ namespace _2x
             trayIcon.Icon = defaultStart;
             SetupTrayIcon();
             LoadCurrentProxySettings();
+
+            proxySettingsDict["Default Proxy"] = Tuple.Create("127.0.0.1", "8080");
 
             // Set up timer
             statusCheckTimer = new System.Windows.Forms.Timer();
@@ -38,7 +46,6 @@ namespace _2x
                 key.Close();
             }
         }
-
 
         private void Form1_Load(object sender, EventArgs e)
         {
@@ -77,6 +84,38 @@ namespace _2x
 
             trayIcon.MouseClick += TrayIcon_MouseClick;
             trayIcon.MouseDoubleClick += TrayIcon_MouseDoubleClick;
+
+            // Populate proxy settings menu items
+            UpdateProxySettingsMenuItems();
+        }
+
+        private void UpdateProxySettingsMenuItems()
+        {
+            proxySettingsMenuItem.DropDownItems.Clear();
+            proxySettingsMenuItem.DropDownItems.Add(enableProxyMenuItem);
+            proxySettingsMenuItem.DropDownItems.Add(disableProxyMenuItem);
+            foreach (var proxy in proxySettingsDict)
+            {
+                var menuItem = new ToolStripMenuItem(proxy.Key);
+                menuItem.Click += ProxySettingsMenuItem_Click;
+                proxySettingsMenuItem.DropDownItems.Add(menuItem);
+            }
+        }
+
+        private void ProxySettingsMenuItem_Click(object sender, EventArgs e)
+        {
+            var menuItem = sender as ToolStripMenuItem;
+            if (menuItem != null)
+            {
+                string selectedProxyName = menuItem.Text;
+                if (proxySettingsDict.ContainsKey(selectedProxyName))
+                {
+                    (proxyAddress, proxyPort) = proxySettingsDict[selectedProxyName];
+                    SetProxy(true, proxyAddress, proxyPort);
+                    proxyEnabled = true;
+                    UpdateTrayIconText();
+                }
+            }
         }
 
         private void TrayIcon_MouseClick(object sender, MouseEventArgs e)
@@ -115,7 +154,6 @@ namespace _2x
             }
         }
 
-
         private void EnableProxyMenuItem_Click(object sender, EventArgs e)
         {
             SetProxy(true, proxyAddress, proxyPort);
@@ -132,17 +170,22 @@ namespace _2x
 
         private void EditProxyMenuItem_Click(object sender, EventArgs e)
         {
-            using (ProxySettingsDialog dialog = new ProxySettingsDialog(proxyAddress, proxyPort))
+            using (ProxySettingsDialog dialog = new ProxySettingsDialog(proxySettingsDict))
             {
                 if (dialog.ShowDialog() == DialogResult.OK)
                 {
-                    proxyAddress = dialog.ProxyAddress;
-                    proxyPort = dialog.ProxyPort;
-                    if (proxyEnabled)
+                    string selectedProxyName = dialog.SelectedProxyName;
+                    if (selectedProxyName != null && proxySettingsDict.ContainsKey(selectedProxyName))
                     {
-                        SetProxy(true, proxyAddress, proxyPort);
+                        (proxyAddress, proxyPort) = proxySettingsDict[selectedProxyName];
+
+                        if (proxyEnabled)
+                        {
+                            SetProxy(true, proxyAddress, proxyPort);
+                        }
+                        UpdateTrayIconText();
+                        UpdateProxySettingsMenuItems(); // Refresh the menu items
                     }
-                    UpdateTrayIconText();
                 }
             }
         }
@@ -297,7 +340,6 @@ namespace _2x
                 : "代理状态: 已禁用";
         }
 
-
         private void AddToStartup()
         {
             RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
@@ -327,6 +369,5 @@ namespace _2x
             // Close the application
             Application.Exit();
         }
-
     }
 }
